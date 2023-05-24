@@ -66,7 +66,11 @@ class KissICP:
             max_correspondance_distance=3 * sigma,
             kernel=sigma / 3,
         )
-
+        ##################
+        # print("last_pose", last_pose)
+        # print("new_pose", new_pose)
+        print("Translation", new_pose @  np.linalg.inv(last_pose))
+        ##################
         self.adaptive_threshold.update_model_deviation(np.linalg.inv(initial_guess) @ new_pose)
         self.local_map.update(frame_downsample, new_pose)
         self.poses.append(new_pose)

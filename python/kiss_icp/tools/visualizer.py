@@ -98,12 +98,35 @@ class RegistrationVisualizer(StubVisualizer):
         self.vis.create_window(window_name=w_name, width=1920, height=1080)
         self.vis.add_geometry(self.source)
         self.vis.add_geometry(self.keypoints)
-        self.vis.add_geometry(self.target)
+        
+        box = np.array([24.0245 + np.random.rand(1) *10, 9.1368, -1.0325, 3.9734, 1.6260, 1.6061, -3.1267])
+        print(box.shape)
+        line_set, box3d = self.translate_boxes_to_open3d_instance(box)
+        line_set.paint_uniform_color((0, 1, 0))
+        self.vis.add_geometry(line_set)
+
+# 0
+# [[ 24.0245,   9.1368,  -1.0325,   3.9734,   1.6260,   1.6061,  -3.1267],
+#         [ 20.7825, -21.2953,  -0.0972,   0.6851,   0.7327,   1.7784,   1.8844]]
+
+# 1
+# [[ 2.0819e+01,  9.2048e+00, -1.0291e+00,  3.4018e+00,  1.5101e+00,
+#           1.4456e+00,  3.1432e+00],
+#         [ 6.9949e+00, -2.1386e+01, -4.5070e-01,  4.4062e+00,  1.7177e+00,
+#           1.5711e+00, -2.4824e+00],
+#         [ 5.1868e+00,  3.2407e+01, -1.8581e+00,  8.0439e-01,  6.3408e-01,
+#           1.9083e+00,  8.7143e-01],
+#         [ 2.4092e+01,  2.0004e-01, -5.9887e-01,  3.7187e+00,  1.6607e+00,
+#           1.6982e+00,  1.0615e-02],
+#         [ 1.1965e+01,  1.8768e+01, -1.1935e+00,  4.9087e+00,  1.9989e+00,
+#           2.1694e+00,  1.0965e-01]]
+
+
         self._set_black_background(self.vis)
         self.vis.get_render_option().point_size = 1
         print(
             f"{w_name} initialized. Press:\n"
-            "\t[SPACE] to pause/start\n"
+            "\t[SPACE] to pause/sdfdsstart\n"
             "\t  [ESC] to exit\n"
             "\t    [N] to step\n"
             "\t    [F] to toggle on/off the input cloud to the pipeline\n"
@@ -237,3 +260,46 @@ class RegistrationVisualizer(StubVisualizer):
         if self.reset_bounding_box:
             self.vis.reset_view_point(True)
             self.reset_bounding_box = False
+
+
+
+    def translate_boxes_to_open3d_instance(self, gt_boxes):
+        """
+                4-------- 6
+            /|         /|
+            5 -------- 3 .
+            | |        | |
+            . 7 -------- 1
+            |/         |/
+            2 -------- 0
+        """
+        print("gt_boxes", gt_boxes)
+        center = gt_boxes[0:3]
+        lwh = gt_boxes[3:6]
+        axis_angles = np.array([0, 0, gt_boxes[6] + 1e-10])
+        rot = self.o3d.geometry.get_rotation_matrix_from_axis_angle(axis_angles)
+        box3d = self.o3d.geometry.OrientedBoundingBox(center, rot, lwh)
+
+        line_set = self.o3d.geometry.LineSet.create_from_oriented_bounding_box(box3d)
+
+        # import ipdb; ipdb.set_trace(context=20)
+        lines = np.asarray(line_set.lines)
+        lines = np.concatenate([lines, np.array([[1, 4], [7, 6]])], axis=0)
+
+        line_set.lines = self.o3d.utility.Vector2iVector(lines)
+        return line_set, box3d
+
+
+    def draw_box(vis, gt_boxes, color=(0, 1, 0), ref_labels=None, score=None):
+        for i in range(gt_boxes.shape[0]):
+            line_set, box3d = translate_boxes_to_open3d_instance(gt_boxes[i])
+            if ref_labels is None:
+                line_set.paint_uniform_color((0, 1, 0))
+            else:
+                line_set.paint_uniform_color(box_colormap[ref_labels[i]])
+            
+            vis.add_geometry(line_set)
+            # if score is not None:
+            #     corners = box3d.get_box_points()
+            #     vis.add_3d_label(corners[5], '%.2f' % score[i])
+        return vis

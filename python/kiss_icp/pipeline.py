@@ -93,12 +93,13 @@ class OdometryPipeline:
 
     # Private interface  ------
     def _run_pipeline(self):
+        bounding_boxes_pointrcnn = np.load('/Users/panyr/Master_Bonn/Modules/2nd_semester/MSR-P-S/kiss-icp/thisdict.npy', allow_pickle='TRUE').item()
         for idx in get_progress_bar(self._first, self._last):
             raw_frame, timestamps = self._next(idx)
             start_time = time.perf_counter_ns()
             source, keypoints = self.odometry.register_frame(raw_frame, timestamps)
             self.times.append(time.perf_counter_ns() - start_time)
-            self.visualizer.update(source, keypoints, self.odometry.local_map, self.poses[-1])
+            self.visualizer.update(source, keypoints, self.odometry.local_map, self.poses[-1], bounding_boxes_pointrcnn[idx])
 
     def _next(self, idx):
         """TODO: re-arrange this logic"""

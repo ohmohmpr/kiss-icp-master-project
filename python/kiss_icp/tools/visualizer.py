@@ -282,12 +282,13 @@ class RegistrationVisualizer(StubVisualizer):
 
     def draw_box(self, gt_boxes):
         for i in range(gt_boxes.shape[0]):
+            # print(np.around(gt_boxes[i], decimals=1))
+            # test = np.around(gt_boxes[i], decimals=1)
             line_set, box3d = self.translate_boxes_to_open3d_instance(gt_boxes[i])
             # if ref_labels is None:
             line_set.paint_uniform_color((0, 1, 0))
             # else:
             #     line_set.paint_uniform_color(box_colormap[ref_labels[i]])
-
 
             self.group.append(line_set)
             self.vis.add_geometry(line_set)
@@ -296,7 +297,6 @@ class RegistrationVisualizer(StubVisualizer):
             # print("self.line_set", np.asarray(self.line_set.lines))
             # self.vis.update_geometry(self.line_set)
             ############################################################
-            
             # if score is not None:
             #     corners = box3d.get_box_points()
             #     vis.add_3d_label(corners[5], '%.2f' % score[i])
@@ -304,5 +304,5 @@ class RegistrationVisualizer(StubVisualizer):
     
     def remove_box(self):
         for i in range(len(self.group)):
-            self.vis.remove_geometry(self.group[i])
-
+            self.vis.remove_geometry(self.group[i], reset_bounding_box=False)
+        self.group = []

@@ -1,8 +1,8 @@
 How to run
-1. pip3 uninstall kiss-icp
-2. cd kiss-icp/python
-3. pip install --verbose .
-4. kiss_icp_pipeline --visualize /data/
+
+pip3 uninstall kiss-icp -y && pip3 install --verbose . && kiss_icp_pipeline --visualize ../data/
+
+
 
 
 in python/kiss_icp/kiss_icp.py line 69

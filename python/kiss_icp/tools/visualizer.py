@@ -62,6 +62,7 @@ class RegistrationVisualizer(StubVisualizer):
         self.source = self.o3d.geometry.PointCloud()
         self.keypoints = self.o3d.geometry.PointCloud()
         self.target = self.o3d.geometry.PointCloud()
+        self.line_set = self.o3d.geometry.LineSet()
         self.frames = []
 
         # Initialize visualizer
@@ -99,11 +100,14 @@ class RegistrationVisualizer(StubVisualizer):
         self.vis.add_geometry(self.source)
         self.vis.add_geometry(self.keypoints)
         
-        box = np.array([24.0245 + np.random.rand(1) *10, 9.1368, -1.0325, 3.9734, 1.6260, 1.6061, -3.1267])
-        print(box.shape)
-        line_set, box3d = self.translate_boxes_to_open3d_instance(box)
-        line_set.paint_uniform_color((0, 1, 0))
-        self.vis.add_geometry(line_set)
+
+            
+        # box = np.array([24.0245,   9.1368,  -1.0325,   3.9734,   1.6260,   1.6061,  -3.1267])
+        # box = np.array([20.7825, -21.2953,  -0.0972,   0.6851,   0.7327,   1.7784,   1.8844])
+        
+        # self.line_set, box3d = self.translate_boxes_to_open3d_instance(box)
+        # self.line_set.paint_uniform_color((0, 1, 0))
+        # self.vis.add_geometry(self.line_set)
 
 # 0
 # [[ 24.0245,   9.1368,  -1.0325,   3.9734,   1.6260,   1.6061,  -3.1267],
@@ -257,6 +261,26 @@ class RegistrationVisualizer(StubVisualizer):
         self.vis.update_geometry(self.keypoints)
         self.vis.update_geometry(self.source)
         self.vis.update_geometry(self.target)
+
+        # self.vis.remove_geometry(self.line_set)
+        # box = np.array([24.0245 , 9.1368, -1.0325, 3.9734, 1.6260, 1.6061, -3.1267])
+        # self.line_set, box3d = self.translate_boxes_to_open3d_instance(box)
+        # self.line_set.paint_uniform_color((0, 1, 0))
+        # self.vis.add_geometry(self.line_set)
+        
+        box = np.array([[24.0245, 9.1368, -1.0325, 3.9734, 1.6260, 1.6061, -3.1267],
+            [ 34.389, 33.686, -0.895, 4.037, 1.665, 1.550, -2.751],
+            [ 30.760, -17.894, -0.418, 0.778, 0.661, 1.782, 0.042],
+            [ 13.682, 19.854, -0.428, 0.337, 0.520, 1.822, -1.453]])
+        
+        # for i in range(box.shape[0]):
+        #     self.line_set, box3d = self.translate_boxes_to_open3d_instance(box[i])
+        #     self.line_set.paint_uniform_color((0, 1, 0))
+        #     self.vis.add_geometry(self.line_set)
+            
+        self.vis = self.draw_box(box)
+        # vis = draw_box(self, vis, gt_boxes, color=(0, 1, 0), ref_labels=None, score=None):
+        
         if self.reset_bounding_box:
             self.vis.reset_view_point(True)
             self.reset_bounding_box = False
@@ -273,7 +297,6 @@ class RegistrationVisualizer(StubVisualizer):
             |/         |/
             2 -------- 0
         """
-        print("gt_boxes", gt_boxes)
         center = gt_boxes[0:3]
         lwh = gt_boxes[3:6]
         axis_angles = np.array([0, 0, gt_boxes[6] + 1e-10])
@@ -290,16 +313,16 @@ class RegistrationVisualizer(StubVisualizer):
         return line_set, box3d
 
 
-    def draw_box(vis, gt_boxes, color=(0, 1, 0), ref_labels=None, score=None):
+    def draw_box(self, gt_boxes):
         for i in range(gt_boxes.shape[0]):
-            line_set, box3d = translate_boxes_to_open3d_instance(gt_boxes[i])
-            if ref_labels is None:
-                line_set.paint_uniform_color((0, 1, 0))
-            else:
-                line_set.paint_uniform_color(box_colormap[ref_labels[i]])
+            line_set, box3d = self.translate_boxes_to_open3d_instance(gt_boxes[i])
+            # if ref_labels is None:
+            line_set.paint_uniform_color((0, 1, 0))
+            # else:
+            #     line_set.paint_uniform_color(box_colormap[ref_labels[i]])
             
-            vis.add_geometry(line_set)
+            self.vis.add_geometry(line_set)
             # if score is not None:
             #     corners = box3d.get_box_points()
             #     vis.add_3d_label(corners[5], '%.2f' % score[i])
-        return vis
+        return self.vis

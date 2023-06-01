@@ -11,6 +11,8 @@ _skbuild/
 # data
 data/*
 sequence
+.DS_Store
+
 # Prerequisites
 *.d
 

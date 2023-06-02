@@ -132,6 +132,11 @@ def kiss_icp_pipeline(
         callback=name_callback,
         help="[Optional] Use a specific dataloader from those supported by KISS-ICP",
     ),
+    bounding_boxes: Path = typer.Argument(
+        ...,
+        help="The bounding boxes file used to find the data association",
+        show_default=False,
+    ),
     config: Optional[Path] = typer.Option(
         None,
         "--config",
@@ -235,6 +240,7 @@ def kiss_icp_pipeline(
             topic=topic,
             meta=meta,
         ),
+        multiple_frame_bboxes=bounding_boxes,
         config=config,
         deskew=deskew,
         max_range=max_range,

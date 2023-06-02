@@ -29,6 +29,11 @@ from typing import Callable, List
 
 import numpy as np
 
+import open3d as o3d
+from bbox import  BBox3D
+from bbox.metrics import iou_3d
+from pyquaternion import Quaternion
+
 YELLOW = np.array([1, 0.706, 0])
 RED = np.array([128, 0, 0]) / 255.0
 BLACK = np.array([0, 0, 0]) / 255.0
@@ -46,7 +51,10 @@ class StubVisualizer(ABC):
 
 class RegistrationVisualizer(StubVisualizer):
     # Public Interaface ----------------------------------------------------------------------------
-    def __init__(self):
+    def __init__(
+        self,
+        first_frame_bboxes,
+    ):
         try:
             self.o3d = importlib.import_module("open3d")
         except ModuleNotFoundError as err:
@@ -62,9 +70,13 @@ class RegistrationVisualizer(StubVisualizer):
         self.source = self.o3d.geometry.PointCloud()
         self.keypoints = self.o3d.geometry.PointCloud()
         self.target = self.o3d.geometry.PointCloud()
-        self.group = []
         self.frames = []
 
+        # data association
+        self.first_frame_bboxes = first_frame_bboxes
+        self.instances = [] 
+        self.v_instances = []
+        
         # Initialize visualizer
         self.vis = self.o3d.visualization.VisualizerWithKeyCallback()
         self._register_key_callbacks()
@@ -82,10 +94,10 @@ class RegistrationVisualizer(StubVisualizer):
             self.render_keypoints,
             self.render_source,
         )
-
-    def update(self, source, keypoints, target_map, pose, bounding_boxes_pointrcnn):
+        
+    def update(self, source, keypoints, target_map, pose, bboxes):
         target = target_map.point_cloud()
-        self._update_geometries(source, keypoints, target, pose, bounding_boxes_pointrcnn)
+        self._update_geometries(source, keypoints, target, pose, bboxes)
         while self.block_vis:
             self.vis.poll_events()
             self.vis.update_renderer()
@@ -99,14 +111,11 @@ class RegistrationVisualizer(StubVisualizer):
         self.vis.create_window(window_name=w_name, width=1920, height=1080)
         self.vis.add_geometry(self.source)
         self.vis.add_geometry(self.keypoints)
+        self.create_bboxes(self.first_frame_bboxes)
         
         #############################################################################
-        # box = np.array([24.0245, 9.1368, -1.0325, 3.9734, 1.6260, 1.6061, -3.1267])
-
-        # self.line_set, box3d = self.translate_boxes_to_open3d_instance(box)
-        # self.line_set.paint_uniform_color((0, 1, 0))
-        # self.vis.add_geometry(self.line_set)
-        # print("self.line_set", np.asarray(self.line_set.lines))
+        # box = np.array([[24.0245, 9.1368, -1.0325, 3.9734, 1.6260, 1.6061, -3.1267]])
+        # self.create_bboxes(box)
         #############################################################################
         
         self._set_black_background(self.vis)
@@ -203,7 +212,7 @@ class RegistrationVisualizer(StubVisualizer):
             for frame in self.frames:
                 self.vis.remove_geometry(frame, reset_bounding_box=False)
 
-    def _update_geometries(self, source, keypoints, target, pose, bounding_boxes_pointrcnn):
+    def _update_geometries(self, source, keypoints, target, pose, bboxes):
         # Source hot frame
         if self.render_source:
             self.source.points = self.o3d.utility.Vector3dVector(source)
@@ -244,9 +253,7 @@ class RegistrationVisualizer(StubVisualizer):
         self.vis.update_geometry(self.keypoints)
         self.vis.update_geometry(self.source)
         self.vis.update_geometry(self.target)
-        
-        self.remove_box()
-        self.draw_box(bounding_boxes_pointrcnn)
+        self.create_bboxes(bboxes)
         
         if self.reset_bounding_box:
             self.vis.reset_view_point(True)
@@ -254,7 +261,7 @@ class RegistrationVisualizer(StubVisualizer):
 
 
 
-    def translate_boxes_to_open3d_instance(self, gt_boxes):
+    def translate_boxes_to_open3d_instance(self, bbox):
         """
                 4-------- 6
             /|         /|
@@ -264,9 +271,9 @@ class RegistrationVisualizer(StubVisualizer):
             |/         |/
             2 -------- 0
         """
-        center = gt_boxes[0:3]
-        lwh = gt_boxes[3:6]
-        axis_angles = np.array([0, 0, gt_boxes[6] + 1e-10])
+        center = bbox[0:3]
+        lwh = bbox[3:6]
+        axis_angles = np.array([0, 0, bbox[6] + 1e-10])
         rot = self.o3d.geometry.get_rotation_matrix_from_axis_angle(axis_angles)
         box3d = self.o3d.geometry.OrientedBoundingBox(center, rot, lwh)
 
@@ -280,29 +287,81 @@ class RegistrationVisualizer(StubVisualizer):
         return line_set, box3d
 
 
-    def draw_box(self, gt_boxes):
-        for i in range(gt_boxes.shape[0]):
-            # print(np.around(gt_boxes[i], decimals=1))
-            # test = np.around(gt_boxes[i], decimals=1)
-            line_set, box3d = self.translate_boxes_to_open3d_instance(gt_boxes[i])
-            # if ref_labels is None:
-            line_set.paint_uniform_color((0, 1, 0))
-            # else:
-            #     line_set.paint_uniform_color(box_colormap[ref_labels[i]])
-
-            self.group.append(line_set)
+    def create_bboxes(self, bboxes):
+        min = 100000
+        for i in range(bboxes.shape[0]):
+            is_the_same_instance = False
+            box = bboxes[i]
+            
+            # create process
+            line_set, _ = self.translate_boxes_to_open3d_instance(box)
+            line_set.paint_uniform_color(np.random.rand(3))
+            # line_set.paint_uniform_color((0, 1, 0))
+            
+            # Check iou
+            if len(self.instances) != 0:
+                is_the_same_instance, found_idx = self.test(box)
+                if found_idx != None and found_idx < min:
+                    min = found_idx
+                
+            if is_the_same_instance:
+                # print("found_idx", found_idx)
+                self.instances.pop(found_idx)
+                color = np.asarray(self.v_instances[found_idx].colors[0])
+                line_set.paint_uniform_color(color)
+                self.vis.remove_geometry(self.v_instances[found_idx], reset_bounding_box=False)
+                self.v_instances.pop(found_idx)
+                
             self.vis.add_geometry(line_set)
+            self.instances.append(box)
+            self.v_instances.append(line_set)
+            
+            
+            
             ############################################################
             # find the way to update, it might be better.
             # print("self.line_set", np.asarray(self.line_set.lines))
             # self.vis.update_geometry(self.line_set)
-            ############################################################
-            # if score is not None:
-            #     corners = box3d.get_box_points()
-            #     vis.add_3d_label(corners[5], '%.2f' % score[i])
+        if min != 100000:
+        #     print("min", min)
+            self.instances = self.instances[min:]
+            self.v_instances = self.v_instances[min:]
+        #     self.remove_box(min)
             
+        # print("len(self.instances)", len(self.instances))
+        # print("len(self.v_instances)", len(self.v_instances))
     
-    def remove_box(self):
-        for i in range(len(self.group)):
-            self.vis.remove_geometry(self.group[i], reset_bounding_box=False)
-        self.group = []
+    def test(self, box):
+        num_prev_boxes = len(self.instances)
+        is_found = False
+        found_idx = None
+        for i in range(num_prev_boxes):
+            
+            prev_b = self.instances[i]
+            current_b = box
+            
+            prev_b_axis_angles = np.array([0, 0, prev_b[6] + 1e-10])
+            prev_b_rot = o3d.geometry.get_rotation_matrix_from_axis_angle(prev_b_axis_angles)
+            prev_b_q8d = Quaternion(matrix=prev_b_rot)
+            
+            current_b_axis_angles = np.array([0, 0, current_b[6] + 1e-10])
+            current_b_rot = o3d.geometry.get_rotation_matrix_from_axis_angle(current_b_axis_angles)
+            current_b_q8d = Quaternion(matrix=current_b_rot)
+
+            box1 = BBox3D(*prev_b[:-1], prev_b_q8d)
+            box2 = BBox3D(*current_b[:-1], current_b_q8d)
+        
+            if (iou_3d(box1, box2) > 0):
+                is_found = True
+                found_idx = i
+                break
+
+        return is_found, found_idx
+                
+                
+    # def remove_box(self, min):
+    #     for i in range(min):
+    #         self.vis.remove_geometry(self.v_instances[i], reset_bounding_box=False)
+                
+                
+                

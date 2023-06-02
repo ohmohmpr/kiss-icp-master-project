@@ -42,6 +42,7 @@ class OdometryPipeline:
     def __init__(
         self,
         dataset,
+        multiple_frame_bboxes,
         config: Optional[Path] = None,
         deskew: Optional[bool] = False,
         max_range: Optional[float] = None,
@@ -57,6 +58,9 @@ class OdometryPipeline:
         self._first = jump
         self._last = self._jump + self._n_scans
 
+        # Bounding boxes == dictionary
+        self._multiple_frame_bboxes = np.load(multiple_frame_bboxes, allow_pickle='TRUE').item()
+        
         # Config and output dir
         self.config = load_config(config, deskew=deskew, max_range=max_range)
         self.results_dir = None
@@ -76,7 +80,8 @@ class OdometryPipeline:
         )
 
         # Visualizer
-        self.visualizer = RegistrationVisualizer() if visualize else StubVisualizer()
+        first_frame_bboxes = self._multiple_frame_bboxes[0]
+        self.visualizer = RegistrationVisualizer(first_frame_bboxes) if visualize else StubVisualizer()
         if hasattr(self._dataset, "use_global_visualizer"):
             self.visualizer.global_view = self._dataset.use_global_visualizer
 
@@ -93,13 +98,12 @@ class OdometryPipeline:
 
     # Private interface  ------
     def _run_pipeline(self):
-        bounding_boxes_pointrcnn = np.load('/Users/panyr/Master_Bonn/Modules/2nd_semester/MSR-P-S/kiss-icp/thisdict.npy', allow_pickle='TRUE').item()
         for idx in get_progress_bar(self._first, self._last):
             raw_frame, timestamps = self._next(idx)
             start_time = time.perf_counter_ns()
             source, keypoints = self.odometry.register_frame(raw_frame, timestamps)
             self.times.append(time.perf_counter_ns() - start_time)
-            self.visualizer.update(source, keypoints, self.odometry.local_map, self.poses[-1], bounding_boxes_pointrcnn[idx])
+            self.visualizer.update(source, keypoints, self.odometry.local_map, self.poses[-1], self._multiple_frame_bboxes[idx])
 
     def _next(self, idx):
         """TODO: re-arrange this logic"""

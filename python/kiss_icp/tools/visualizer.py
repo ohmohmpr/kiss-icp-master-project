@@ -308,7 +308,7 @@ class RegistrationVisualizer(StubVisualizer):
             # Check IOU a new box and prev_boxes
             if len(self.instances) != 0:
                 is_the_same_instance, idx_prev_boxes = self.test(box)
-                print("idx_prev_boxes", idx_prev_boxes)
+                # print("idx_prev_boxes", idx_prev_boxes)
                 
             if is_the_same_instance:
                 num_found_instances = num_found_instances + 1
@@ -359,7 +359,7 @@ class RegistrationVisualizer(StubVisualizer):
             
     def test(self, box):
         num_prev_boxes = len(self.prev_boxes)
-        print("num_prev_boxes => ", num_prev_boxes)
+        # print("num_prev_boxes => ", num_prev_boxes)
         is_found = False
         idx_prev_boxes = -1
         for i in range(num_prev_boxes):

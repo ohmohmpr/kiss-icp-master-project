@@ -103,11 +103,11 @@ class OdometryPipeline:
             raw_frame, timestamps = self._next(idx)
             start_time = time.perf_counter_ns()
             source, keypoints, transformation_matrix = self.odometry.register_frame(raw_frame, timestamps)
-            self.transformation_matrix[idx] = transformation_matrix
+            # self.transformation_matrix[idx] = transformation_matrix
             self.times.append(time.perf_counter_ns() - start_time)
             self.visualizer.update(source, keypoints, self.odometry.local_map, self.poses[-1], self._multiple_frame_bboxes[idx])
         
-        np.save("transformation_matrix.npy", self.transformation_matrix)
+        # np.save("transformation_matrix.npy", self.transformation_matrix)
         
     def _next(self, idx):
         """TODO: re-arrange this logic"""

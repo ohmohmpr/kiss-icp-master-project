@@ -69,12 +69,13 @@ class KissICP:
         ##################
         # print("last_pose", last_pose)
         # print("new_pose", new_pose)
-        # print("Translation", new_pose @  np.linalg.inv(last_pose))
+        transformation_matrix = new_pose @  np.linalg.inv(last_pose)
+        print("transformation_matrix", transformation_matrix)
         ##################
         self.adaptive_threshold.update_model_deviation(np.linalg.inv(initial_guess) @ new_pose)
         self.local_map.update(frame_downsample, new_pose)
         self.poses.append(new_pose)
-        return frame, source
+        return frame, source, transformation_matrix
 
     def voxelize(self, iframe):
         frame_downsample = voxel_down_sample(iframe, self.config.mapping.voxel_size * 0.5)

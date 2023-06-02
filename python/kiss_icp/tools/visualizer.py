@@ -75,7 +75,9 @@ class RegistrationVisualizer(StubVisualizer):
         # data association
         self.first_frame_bboxes = first_frame_bboxes
         self.instances = [] 
-        self.v_instances = []
+        self.visual_instances = []
+        self.prev_boxes = []
+        self.visual_prev_boxes = []
         
         # Initialize visualizer
         self.vis = self.o3d.visualization.VisualizerWithKeyCallback()
@@ -112,11 +114,6 @@ class RegistrationVisualizer(StubVisualizer):
         self.vis.add_geometry(self.source)
         self.vis.add_geometry(self.keypoints)
         self.create_bboxes(self.first_frame_bboxes)
-        
-        #############################################################################
-        # box = np.array([[24.0245, 9.1368, -1.0325, 3.9734, 1.6260, 1.6061, -3.1267]])
-        # self.create_bboxes(box)
-        #############################################################################
         
         self._set_black_background(self.vis)
         self.vis.get_render_option().point_size = 1
@@ -288,56 +285,86 @@ class RegistrationVisualizer(StubVisualizer):
 
 
     def create_bboxes(self, bboxes):
-        min = 100000
+        
+        # print("#################### BEFORE ####################")
+        # print("len(self.instances)", len(self.instances))
+        # print("len(self.visual_instances)", len(self.visual_instances))
+        # print("self.instances", self.instances)
+        # print("#################### BEFORE ####################")
+        
+        self.prev_boxes = self.instances.copy() 
+        self.visual_prev_boxes = self.visual_instances.copy() 
+        
+        num_found_instances =  0 # Remove not found objects
+        num_total_instances = len(self.visual_prev_boxes) # Remove not found objects
         for i in range(bboxes.shape[0]):
             is_the_same_instance = False
             box = bboxes[i]
             
-            # create process
+            # Create a box
             line_set, _ = self.translate_boxes_to_open3d_instance(box)
-            line_set.paint_uniform_color(np.random.rand(3))
-            # line_set.paint_uniform_color((0, 1, 0))
+            line_set.paint_uniform_color(np.random.rand(3)) # line_set.paint_uniform_color((0, 1, 0))
             
-            # Check iou
+            # Check IOU a new box and prev_boxes
             if len(self.instances) != 0:
-                is_the_same_instance, found_idx = self.test(box)
-                if found_idx != None and found_idx < min:
-                    min = found_idx
+                is_the_same_instance, idx_prev_boxes = self.test(box)
+                print("idx_prev_boxes", idx_prev_boxes)
                 
             if is_the_same_instance:
-                # print("found_idx", found_idx)
-                self.instances.pop(found_idx)
-                color = np.asarray(self.v_instances[found_idx].colors[0])
+                num_found_instances = num_found_instances + 1
+                
+                # UPDATE GEOMETRY
+                color = np.asarray(self.visual_prev_boxes[idx_prev_boxes].colors[0])
                 line_set.paint_uniform_color(color)
-                self.vis.remove_geometry(self.v_instances[found_idx], reset_bounding_box=False)
-                self.v_instances.pop(found_idx)
+                self.vis.remove_geometry(self.visual_prev_boxes[idx_prev_boxes], reset_bounding_box=False)
+
+                self.prev_boxes.pop(idx_prev_boxes)
+                self.visual_prev_boxes.pop(idx_prev_boxes)
+                
                 
             self.vis.add_geometry(line_set)
             self.instances.append(box)
-            self.v_instances.append(line_set)
+            self.visual_instances.append(line_set)
             
             
-            
+        # Remove not found objects
+        num_not_found_instances = num_total_instances - num_found_instances
+        self.remove_not_found_box(num_not_found_instances)
+        
+        
+
+        # print("#################### AFTER ####################")
+        
+        num_of_instances_in_this_frame = bboxes.shape[0]
+        self.instances = self.instances[-num_of_instances_in_this_frame:].copy()
+        self.visual_instances = self.visual_instances[-num_of_instances_in_this_frame:].copy()
+        
+        # print("len(self.instances)", len(self.instances))
+        # print("len(self.visual_instances)", len(self.visual_instances))
+        # print("self.instances", self.instances)
+        
+        # print("#################### AFTER ####################")
+        
+        
+    def remove_not_found_box(self, num_not_found_instances):
+        for i in range(num_not_found_instances):
+            self.vis.remove_geometry(self.visual_prev_boxes[i], reset_bounding_box=False)
+                
+
             ############################################################
             # find the way to update, it might be better.
             # print("self.line_set", np.asarray(self.line_set.lines))
             # self.vis.update_geometry(self.line_set)
-        if min != 100000:
-        #     print("min", min)
-            self.instances = self.instances[min:]
-            self.v_instances = self.v_instances[min:]
-        #     self.remove_box(min)
+            ############################################################
             
-        # print("len(self.instances)", len(self.instances))
-        # print("len(self.v_instances)", len(self.v_instances))
-    
     def test(self, box):
-        num_prev_boxes = len(self.instances)
+        num_prev_boxes = len(self.prev_boxes)
+        print("num_prev_boxes => ", num_prev_boxes)
         is_found = False
-        found_idx = None
+        idx_prev_boxes = -1
         for i in range(num_prev_boxes):
             
-            prev_b = self.instances[i]
+            prev_b = self.prev_boxes[i]
             current_b = box
             
             prev_b_axis_angles = np.array([0, 0, prev_b[6] + 1e-10])
@@ -353,15 +380,7 @@ class RegistrationVisualizer(StubVisualizer):
         
             if (iou_3d(box1, box2) > 0):
                 is_found = True
-                found_idx = i
+                idx_prev_boxes = i
                 break
 
-        return is_found, found_idx
-                
-                
-    # def remove_box(self, min):
-    #     for i in range(min):
-    #         self.vis.remove_geometry(self.v_instances[i], reset_bounding_box=False)
-                
-                
-                
+        return is_found, idx_prev_boxes

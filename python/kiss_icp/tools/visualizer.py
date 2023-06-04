@@ -88,7 +88,7 @@ class RegistrationVisualizer(StubVisualizer):
         self.render_map = True
         self.render_source = True
         self.render_keypoints = False
-        self.global_view = False
+        self.global_view = True
         self.render_trajectory = True
         # Cache the state of the visualizer
         self.state = (
@@ -113,7 +113,13 @@ class RegistrationVisualizer(StubVisualizer):
         self.vis.create_window(window_name=w_name, width=1920, height=1080)
         self.vis.add_geometry(self.source)
         self.vis.add_geometry(self.keypoints)
-        self.create_bboxes(self.first_frame_bboxes)
+        self.vis.add_geometry(self.target)
+        
+        
+        self.create_bboxes(self.first_frame_bboxes, np.array([[1, 0, 0, 0], 
+                                                            [0, 1, 0, 0], 
+                                                            [0, 0, 1, 0], 
+                                                            [1, 0, 0, 1]]))
         
         self._set_black_background(self.vis)
         self.vis.get_render_option().point_size = 1
@@ -213,7 +219,7 @@ class RegistrationVisualizer(StubVisualizer):
         # Source hot frame
         if self.render_source:
             self.source.points = self.o3d.utility.Vector3dVector(source)
-            self.source.paint_uniform_color(YELLOW)
+            self.source.paint_uniform_color(RED)
             if self.global_view:
                 self.source.transform(pose)
         else:
@@ -232,6 +238,7 @@ class RegistrationVisualizer(StubVisualizer):
         if self.render_map:
             target = copy.deepcopy(target)
             self.target.points = self.o3d.utility.Vector3dVector(target)
+            self.target.paint_uniform_color(BLUE)
             if not self.global_view:
                 self.target.transform(np.linalg.inv(pose))
         else:
@@ -250,7 +257,7 @@ class RegistrationVisualizer(StubVisualizer):
         self.vis.update_geometry(self.keypoints)
         self.vis.update_geometry(self.source)
         self.vis.update_geometry(self.target)
-        self.create_bboxes(bboxes)
+        self.create_bboxes(bboxes, pose)
         
         if self.reset_bounding_box:
             self.vis.reset_view_point(True)
@@ -284,7 +291,7 @@ class RegistrationVisualizer(StubVisualizer):
         return line_set, box3d
 
 
-    def create_bboxes(self, bboxes):
+    def create_bboxes(self, bboxes, pose):
         
         # print("#################### BEFORE ####################")
         # print("len(self.instances)", len(self.instances))
@@ -304,6 +311,7 @@ class RegistrationVisualizer(StubVisualizer):
             # Create a box
             line_set, _ = self.translate_boxes_to_open3d_instance(box)
             line_set.paint_uniform_color(np.random.rand(3)) # line_set.paint_uniform_color((0, 1, 0))
+            line_set.transform(pose)
             
             # Check IOU a new box and prev_boxes
             if len(self.instances) != 0:

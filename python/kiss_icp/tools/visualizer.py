@@ -33,6 +33,7 @@ import open3d as o3d
 from bbox import  BBox3D
 from bbox.metrics import iou_3d
 from pyquaternion import Quaternion
+from .iou import calculate_iou
 
 YELLOW = np.array([1, 0.706, 0])
 RED = np.array([128, 0, 0]) / 255.0
@@ -71,6 +72,7 @@ class RegistrationVisualizer(StubVisualizer):
         self.keypoints = self.o3d.geometry.PointCloud()
         self.target = self.o3d.geometry.PointCloud()
         self.frames = []
+        self.count = 0
 
         # data association
         self.first_frame_bboxes = first_frame_bboxes
@@ -306,35 +308,47 @@ class RegistrationVisualizer(StubVisualizer):
         num_total_instances = len(self.visual_prev_boxes) # Remove not found objects
         for i in range(bboxes.shape[0]):
             is_the_same_instance = False
-            box = bboxes[i]
+            box = bboxes[i] #xyz lwh yaw in axis-angle
             
             # Create a box
-            line_set, _ = self.translate_boxes_to_open3d_instance(box)
+            line_set, box3d = self.translate_boxes_to_open3d_instance(box)
             line_set.paint_uniform_color(np.random.rand(3)) # line_set.paint_uniform_color((0, 1, 0))
+            
+            
+            # box3d.transform(pose)
+            box_t = np.hstack((box[0:3], np.array(1)))
+            hom_pose = pose @ box_t
+            box[0:3] = hom_pose[0:3]
+            
             line_set.transform(pose)
             
             # Check IOU a new box and prev_boxes
             if len(self.instances) != 0:
                 is_the_same_instance, idx_prev_boxes = self.test(box)
+                # is_the_same_instance, idx_prev_boxes = self.test(box3d)
                 # print("idx_prev_boxes", idx_prev_boxes)
-                
+            # print("self.count", self.count)
+            
             if is_the_same_instance:
                 num_found_instances = num_found_instances + 1
                 
                 # UPDATE GEOMETRY
                 color = np.asarray(self.visual_prev_boxes[idx_prev_boxes].colors[0])
+                # print("Color", color)
+                
                 line_set.paint_uniform_color(color)
                 self.vis.remove_geometry(self.visual_prev_boxes[idx_prev_boxes], reset_bounding_box=False)
 
                 self.prev_boxes.pop(idx_prev_boxes)
                 self.visual_prev_boxes.pop(idx_prev_boxes)
                 
-                
+            
+            # print("box", box[0:3])  
             self.vis.add_geometry(line_set)
             self.instances.append(box)
             self.visual_instances.append(line_set)
             
-            
+        self.count = self.count + 1
         # Remove not found objects
         num_not_found_instances = num_total_instances - num_found_instances
         self.remove_not_found_box(num_not_found_instances)
@@ -364,7 +378,32 @@ class RegistrationVisualizer(StubVisualizer):
             # print("self.line_set", np.asarray(self.line_set.lines))
             # self.vis.update_geometry(self.line_set)
             ############################################################
-            
+
+    def vector3(self, x,y,z):
+        return np.array((x,y,z), dtype=float)
+
+    def Rotmat2Euler(self, rotmat ):
+    # ############################################################################
+    # Function computes the Euler Angles from given rotation matrix
+    # ----------------------------------------------------------------------------
+    # Input:
+    # rotmat (double 3x3)...matrix
+    #-----------------------------------------------------------------------------
+    # @author: Felix Esser
+    # @date: 14.07.2020
+    # @mail: s7feesse@uni-bonn.de
+    # @ literature: Förstner and Wrobel (2016), Photogrammetric Computer Vision
+    # ############################################################################
+
+        roll  = np.arctan2( rotmat[2,1], rotmat[2,2] )
+        pitch = np.arctan2( -rotmat[2,0], np.sqrt(rotmat[2,1]**2 + rotmat[2,2]**2) )
+        yaw   = np.arctan2( rotmat[1,0], rotmat[0,0] )
+
+        rpy = self.vector3( roll, pitch, yaw )
+
+        return rpy
+
+
     def test(self, box):
         num_prev_boxes = len(self.prev_boxes)
         # print("num_prev_boxes => ", num_prev_boxes)
@@ -375,20 +414,31 @@ class RegistrationVisualizer(StubVisualizer):
             prev_b = self.prev_boxes[i]
             current_b = box
             
+            
             prev_b_axis_angles = np.array([0, 0, prev_b[6] + 1e-10])
             prev_b_rot = o3d.geometry.get_rotation_matrix_from_axis_angle(prev_b_axis_angles)
-            prev_b_q8d = Quaternion(matrix=prev_b_rot)
+            yaw_1 = self.Rotmat2Euler(prev_b_rot)[2]
+            prev_b[6] = yaw_1
+            # prev_b_q8d = Quaternion(matrix=prev_b_rot)
             
             current_b_axis_angles = np.array([0, 0, current_b[6] + 1e-10])
             current_b_rot = o3d.geometry.get_rotation_matrix_from_axis_angle(current_b_axis_angles)
-            current_b_q8d = Quaternion(matrix=current_b_rot)
+            yaw_2 = self.Rotmat2Euler(current_b_rot)[2]
+            current_b[6] = yaw_2
+            # current_b_q8d = Quaternion(matrix=current_b_rot)
 
-            box1 = BBox3D(*prev_b[:-1], prev_b_q8d)
-            box2 = BBox3D(*current_b[:-1], current_b_q8d)
+            # box1 = BBox3D(*prev_b[:-1], prev_b_q8d)
+            # box2 = BBox3D(*current_b[:-1], current_b_q8d)
         
-            if (iou_3d(box1, box2) > 0):
+            # if (iou_3d(box1, box2) > 0):
+            #     is_found = True
+            #     idx_prev_boxes = i
+            #     break
+            
+
+            if (calculate_iou(prev_b, current_b) > 0):
                 is_found = True
                 idx_prev_boxes = i
                 break
-
+                
         return is_found, idx_prev_boxes

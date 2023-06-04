@@ -10,7 +10,7 @@ _skbuild/
 ### C++ ###
 # data
 data/*
-sequence
+
 .DS_Store
 
 # Prerequisites

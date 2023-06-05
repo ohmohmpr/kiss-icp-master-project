@@ -41,6 +41,7 @@ BLACK = np.array([0, 0, 0]) / 255.0
 BLUE = np.array([0.4, 0.5, 0.9])
 SPHERE_SIZE = 0.20
 
+global_view = False
 
 class StubVisualizer(ABC):
     def __init__(self):
@@ -90,7 +91,7 @@ class RegistrationVisualizer(StubVisualizer):
         self.render_map = True
         self.render_source = True
         self.render_keypoints = False
-        self.global_view = True
+        self.global_view = global_view
         self.render_trajectory = True
         # Cache the state of the visualizer
         self.state = (
@@ -291,7 +292,7 @@ class RegistrationVisualizer(StubVisualizer):
 
         line_set.lines = self.o3d.utility.Vector2iVector(lines)
         return line_set, box3d
-
+# https://stackoverflow.com/questions/59026581/create-arrows-in-open3d
 
     def create_bboxes(self, bboxes, pose):
         
@@ -314,13 +315,12 @@ class RegistrationVisualizer(StubVisualizer):
             line_set, box3d = self.translate_boxes_to_open3d_instance(box)
             line_set.paint_uniform_color(np.random.rand(3)) # line_set.paint_uniform_color((0, 1, 0))
             
-            
-            # box3d.transform(pose)
-            box_t = np.hstack((box[0:3], np.array(1)))
-            hom_pose = pose @ box_t
-            box[0:3] = hom_pose[0:3]
-            
-            line_set.transform(pose)
+            if global_view:
+                # box3d.transform(pose)
+                box_t = np.hstack((box[0:3], np.array(1)))
+                hom_pose = pose @ box_t
+                box[0:3] = hom_pose[0:3]
+                line_set.transform(pose)
             
             # Check IOU a new box and prev_boxes
             if len(self.instances) != 0:
@@ -341,10 +341,10 @@ class RegistrationVisualizer(StubVisualizer):
 
                 self.prev_boxes.pop(idx_prev_boxes)
                 self.visual_prev_boxes.pop(idx_prev_boxes)
-                
+    
             
             # print("box", box[0:3])  
-            self.vis.add_geometry(line_set)
+            self.vis.add_geometry(line_set, reset_bounding_box=False)
             self.instances.append(box)
             self.visual_instances.append(line_set)
             

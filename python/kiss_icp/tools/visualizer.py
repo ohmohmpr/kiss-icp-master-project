@@ -29,11 +29,14 @@ from typing import Callable, List
 
 import numpy as np
 
+import pprint
+
 import open3d as o3d
 from bbox import  BBox3D
 from bbox.metrics import iou_3d
 from pyquaternion import Quaternion
 from .iou import calculate_iou
+from .bounding_box3D import BoundingBox3D, InstanceAssociation, Frame
 
 YELLOW = np.array([1, 0.706, 0])
 RED = np.array([128, 0, 0]) / 255.0
@@ -81,6 +84,9 @@ class RegistrationVisualizer(StubVisualizer):
         self.visual_instances = []
         self.prev_boxes = []
         self.visual_prev_boxes = []
+        self.I = InstanceAssociation()
+        self.color_codes = np.load('color_codes.npy')
+        self.canonical_points = {}
         
         # Initialize visualizer
         self.vis = self.o3d.visualization.VisualizerWithKeyCallback()
@@ -118,17 +124,28 @@ class RegistrationVisualizer(StubVisualizer):
         self.vis.add_geometry(self.keypoints)
         self.vis.add_geometry(self.target)
         
+        box_list = []
+        for i in range(self.first_frame_bboxes.shape[0]):
+            box = self.first_frame_bboxes[i]
+            box_list.append(BoundingBox3D(*box))
+        F = Frame(box_list)
+        self.I.add(F.frames, np.array([[1, 0, 0, 0], 
+                                       [0, 1, 0, 0], 
+                                       [0, 0, 1, 0], 
+                                       [0, 0, 0, 1]]))
+        new_bboxes = self.I.return_current_obj()
+        self.create_bboxes_test(new_bboxes)
         
-        self.create_bboxes(self.first_frame_bboxes, np.array([[1, 0, 0, 0], 
-                                                            [0, 1, 0, 0], 
-                                                            [0, 0, 1, 0], 
-                                                            [1, 0, 0, 1]]))
+        # self.create_bboxes(self.first_frame_bboxes, np.array([[1, 0, 0, 0], 
+        #                                                     [0, 1, 0, 0], 
+        #                                                     [0, 0, 1, 0], 
+        #                                                     [0, 0, 0, 1]]))
         
         self._set_black_background(self.vis)
         self.vis.get_render_option().point_size = 1
         print(
             f"{w_name} initialized. Press:\n"
-            "\t[SPACE] to pause/sdfdsstart\n"
+            "\t[SPACE] to pause/start\n"
             "\t  [ESC] to exit\n"
             "\t    [N] to step\n"
             "\t    [F] to toggle on/off the input cloud to the pipeline\n"
@@ -260,7 +277,18 @@ class RegistrationVisualizer(StubVisualizer):
         self.vis.update_geometry(self.keypoints)
         self.vis.update_geometry(self.source)
         self.vis.update_geometry(self.target)
-        self.create_bboxes(bboxes, pose)
+
+        box_list = []
+        for i in range(bboxes.shape[0]):
+            box = bboxes[i]
+            box_list.append(BoundingBox3D(*box))
+            
+        F = Frame(box_list)
+        self.I.add(F.frames, pose)
+        new_bboxes = self.I.return_current_obj()
+        
+        
+        self.create_bboxes_test(new_bboxes)
         
         if self.reset_bounding_box:
             self.vis.reset_view_point(True)
@@ -294,151 +322,229 @@ class RegistrationVisualizer(StubVisualizer):
         return line_set, box3d
 # https://stackoverflow.com/questions/59026581/create-arrows-in-open3d
 
-    def create_bboxes(self, bboxes, pose):
-        
-        # print("#################### BEFORE ####################")
-        # print("len(self.instances)", len(self.instances))
-        # print("len(self.visual_instances)", len(self.visual_instances))
-        # print("self.instances", self.instances)
-        # print("#################### BEFORE ####################")
-        
-        self.prev_boxes = self.instances.copy() 
-        self.visual_prev_boxes = self.visual_instances.copy() 
-        
-        num_found_instances =  0 # Remove not found objects
-        num_total_instances = len(self.visual_prev_boxes) # Remove not found objects
-        for i in range(bboxes.shape[0]):
-            is_the_same_instance = False
-            box = bboxes[i] #xyz lwh yaw in axis-angle
-            
+    def create_bboxes_test(self, bboxes):
+        self.remove_all()
+        length = len(bboxes)
+        for i in range(length):
+            box = [ 
+                bboxes[i]['frames'][-1]['s_pose']['x'],
+                bboxes[i]['frames'][-1]['s_pose']['y'],
+                bboxes[i]['frames'][-1]['s_pose']['z'],
+                bboxes[i]['frames'][-1]['s_pose']['length'],
+                bboxes[i]['frames'][-1]['s_pose']['width'],
+                bboxes[i]['frames'][-1]['s_pose']['height'],
+                bboxes[i]['frames'][-1]['s_pose']['yaw'],
+            ] # xyz lwh yaw in axis-angle
+
             # Create a box
             line_set, box3d = self.translate_boxes_to_open3d_instance(box)
-            line_set.paint_uniform_color(np.random.rand(3)) # line_set.paint_uniform_color((0, 1, 0))
+            line_set.paint_uniform_color(self.color_codes[bboxes[i]['frames'][-1]['idx']]) # line_set.paint_uniform_color((0, 1, 0))
             
-            if global_view:
-                # box3d.transform(pose)
-                box_t = np.hstack((box[0:3], np.array(1)))
-                hom_pose = pose @ box_t
-                box[0:3] = hom_pose[0:3]
-                line_set.transform(pose)
-            
-            # Check IOU a new box and prev_boxes
-            if len(self.instances) != 0:
-                is_the_same_instance, idx_prev_boxes = self.test(box)
-                # is_the_same_instance, idx_prev_boxes = self.test(box3d)
-                # print("idx_prev_boxes", idx_prev_boxes)
-            # print("self.count", self.count)
-            
-            if is_the_same_instance:
-                num_found_instances = num_found_instances + 1
+            if bboxes[i]['frames'][-1]['idx'] == 1:
+                idx_points = box3d.get_point_indices_within_bounding_box(self.source.points)
+                yaw = bboxes[i]['frames'][-1]['s_pose']['yaw']
+                rot_matrix = np.array([
+                                [np.cos(yaw), -np.sin(yaw), 0, bboxes[i]['frames'][-1]['s_pose']['x']],
+                                [np.sin(yaw),  np.cos(yaw), 0, bboxes[i]['frames'][-1]['s_pose']['y']],
+                                [          0,            0, 1, bboxes[i]['frames'][-1]['s_pose']['z']],
+                                [          0,            0, 0,                                      1],
+                            ])
+                shape = np.asarray(self.source.points)[idx_points, :].shape[0]
+                points = np.hstack((np.asarray(self.source.points)[idx_points, :], np.ones((shape, 1))))
+                canonical_points = np.linalg.inv(rot_matrix) @ points.T
+                canonical_points = canonical_points[0:3].T
                 
-                # UPDATE GEOMETRY
-                color = np.asarray(self.visual_prev_boxes[idx_prev_boxes].colors[0])
-                # print("Color", color)
+                self.canonical_points[bboxes[i]['frames'][-1]['frame_id']] = canonical_points
+                # print("self.canonical_points", self.canonical_points)
                 
-                line_set.paint_uniform_color(color)
-                self.vis.remove_geometry(self.visual_prev_boxes[idx_prev_boxes], reset_bounding_box=False)
+                # self.canonical_points.append(canonical_points)
+                # self.source.paint_uniform_color(RED)
+                
+            # if global_view:
+            #     box_t = np.hstack((box[0:3], np.array(1)))
+            #     hom_pose = pose @ box_t
+            #     box[0:3] = hom_pose[0:3]
+            #     line_set.transform(pose)
 
-                self.prev_boxes.pop(idx_prev_boxes)
-                self.visual_prev_boxes.pop(idx_prev_boxes)
-    
-            
-            # print("box", box[0:3])  
             self.vis.add_geometry(line_set, reset_bounding_box=False)
-            self.instances.append(box)
             self.visual_instances.append(line_set)
+        np.save('canonical_points.npy', self.canonical_points)
+        # np.save('canonical_points.npy', np.array(self.canonical_points, dtype=object), allow_pickle=True)
+
+    def remove_all(self):
+        length = len(self.visual_instances)
+        
+        for i in range(length):
+            self.vis.remove_geometry(self.visual_instances[0], reset_bounding_box=False)
+            self.visual_instances.pop(0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # def create_bboxes(self, bboxes, pose):
+        
+    #     # print("#################### BEFORE ####################")
+    #     # print("len(self.instances)", len(self.instances))
+    #     # print("len(self.visual_instances)", len(self.visual_instances))
+    #     # print("self.instances", self.instances)
+    #     # print("#################### BEFORE ####################")
+
+    #     self.prev_boxes = self.instances.copy()
+    #     self.visual_prev_boxes = self.visual_instances.copy()
+
+    #     num_found_instances =  0 # Remove not found objects
+    #     num_total_instances = len(self.visual_prev_boxes) # Remove not found objects
+    #     for i in range(bboxes.shape[0]):
+    #         is_the_same_instance = False
+    #         box = bboxes[i] # xyz lwh yaw in axis-angle
+
+    #         # Create a box
+    #         line_set, box3d = self.translate_boxes_to_open3d_instance(box)
+    #         line_set.paint_uniform_color(np.random.rand(3)) # line_set.paint_uniform_color((0, 1, 0))
+
+    #         if global_view:
+    #             # box3d.transform(pose)
+    #             box_t = np.hstack((box[0:3], np.array(1)))
+    #             hom_pose = pose @ box_t
+    #             box[0:3] = hom_pose[0:3]
+    #             line_set.transform(pose)
+
+    #         # Check IOU a new box and prev_boxes
+    #         if len(self.instances) != 0:
+    #             is_the_same_instance, idx_prev_boxes = self.find_iou(box)
+    #             # is_the_same_instance, idx_prev_boxes = self.find_iou(box3d)
+    #             # print("idx_prev_boxes", idx_prev_boxes)
+    #         # print("self.count", self.count)
+
+    #         if is_the_same_instance:
+    #             num_found_instances = num_found_instances + 1
+
+    #             # UPDATE GEOMETRY
+    #             color = np.asarray(self.visual_prev_boxes[idx_prev_boxes].colors[0])
+    #             # print("Color", color)
+
+    #             line_set.paint_uniform_color(color)
+    #             self.vis.remove_geometry(self.visual_prev_boxes[idx_prev_boxes], reset_bounding_box=False)
+
+    #             self.prev_boxes.pop(idx_prev_boxes)
+    #             self.visual_prev_boxes.pop(idx_prev_boxes)
+
+    #         # print("box", box[0:3])
+    #         self.vis.add_geometry(line_set, reset_bounding_box=False)
+    #         self.instances.append(box)
+    #         self.visual_instances.append(line_set)
             
-        self.count = self.count + 1
-        # Remove not found objects
-        num_not_found_instances = num_total_instances - num_found_instances
-        self.remove_not_found_box(num_not_found_instances)
+    #     self.count = self.count + 1
+    #     # Remove not found objects
+    #     num_not_found_instances = num_total_instances - num_found_instances
+    #     self.remove_not_found_box(num_not_found_instances)
         
         
 
-        # print("#################### AFTER ####################")
+    #     # print("#################### AFTER ####################")
         
-        num_of_instances_in_this_frame = bboxes.shape[0]
-        self.instances = self.instances[-num_of_instances_in_this_frame:].copy()
-        self.visual_instances = self.visual_instances[-num_of_instances_in_this_frame:].copy()
+    #     num_of_instances_in_this_frame = bboxes.shape[0]
+    #     self.instances = self.instances[-num_of_instances_in_this_frame:].copy()
+    #     self.visual_instances = self.visual_instances[-num_of_instances_in_this_frame:].copy()
         
-        # print("len(self.instances)", len(self.instances))
-        # print("len(self.visual_instances)", len(self.visual_instances))
-        # print("self.instances", self.instances)
+    #     # print("len(self.instances)", len(self.instances))
+    #     # print("len(self.visual_instances)", len(self.visual_instances))
+    #     # print("self.instances", self.instances)
         
-        # print("#################### AFTER ####################")
+    #     # print("#################### AFTER ####################")
         
         
-    def remove_not_found_box(self, num_not_found_instances):
-        for i in range(num_not_found_instances):
-            self.vis.remove_geometry(self.visual_prev_boxes[i], reset_bounding_box=False)
+    # def remove_not_found_box(self, num_not_found_instances):
+    #     for i in range(num_not_found_instances):
+    #         self.vis.remove_geometry(self.visual_prev_boxes[i], reset_bounding_box=False)
                 
 
-            ############################################################
-            # find the way to update, it might be better.
-            # print("self.line_set", np.asarray(self.line_set.lines))
-            # self.vis.update_geometry(self.line_set)
-            ############################################################
+    #         ############################################################
+    #         # find the way to update, it might be better.
+    #         # print("self.line_set", np.asarray(self.line_set.lines))
+    #         # self.vis.update_geometry(self.line_set)
+    #         ############################################################
 
-    def vector3(self, x,y,z):
-        return np.array((x,y,z), dtype=float)
+    # def vector3(self, x,y,z):
+    #     return np.array((x,y,z), dtype=float)
 
-    def Rotmat2Euler(self, rotmat ):
-    # ############################################################################
-    # Function computes the Euler Angles from given rotation matrix
-    # ----------------------------------------------------------------------------
-    # Input:
-    # rotmat (double 3x3)...matrix
-    #-----------------------------------------------------------------------------
-    # @author: Felix Esser
-    # @date: 14.07.2020
-    # @mail: s7feesse@uni-bonn.de
-    # @ literature: Förstner and Wrobel (2016), Photogrammetric Computer Vision
-    # ############################################################################
+    # def Rotmat2Euler(self, rotmat ):
+    # # ############################################################################
+    # # Function computes the Euler Angles from given rotation matrix
+    # # ----------------------------------------------------------------------------
+    # # Input:
+    # # rotmat (double 3x3)...matrix
+    # #-----------------------------------------------------------------------------
+    # # @author: Felix Esser
+    # # @date: 14.07.2020
+    # # @mail: s7feesse@uni-bonn.de
+    # # @ literature: Förstner and Wrobel (2016), Photogrammetric Computer Vision
+    # # ############################################################################
 
-        roll  = np.arctan2( rotmat[2,1], rotmat[2,2] )
-        pitch = np.arctan2( -rotmat[2,0], np.sqrt(rotmat[2,1]**2 + rotmat[2,2]**2) )
-        yaw   = np.arctan2( rotmat[1,0], rotmat[0,0] )
+    #     roll  = np.arctan2( rotmat[2,1], rotmat[2,2] )
+    #     pitch = np.arctan2( -rotmat[2,0], np.sqrt(rotmat[2,1]**2 + rotmat[2,2]**2) )
+    #     yaw   = np.arctan2( rotmat[1,0], rotmat[0,0] )
 
-        rpy = self.vector3( roll, pitch, yaw )
+    #     rpy = self.vector3( roll, pitch, yaw )
 
-        return rpy
+    #     return rpy
 
 
-    def test(self, box):
-        num_prev_boxes = len(self.prev_boxes)
-        # print("num_prev_boxes => ", num_prev_boxes)
-        is_found = False
-        idx_prev_boxes = -1
-        for i in range(num_prev_boxes):
+    # def find_iou(self, box):
+    #     num_prev_boxes = len(self.prev_boxes)
+    #     # print("num_prev_boxes => ", num_prev_boxes)
+    #     is_found = False
+    #     idx_prev_boxes = -1
+    #     for i in range(num_prev_boxes):
             
-            prev_b = self.prev_boxes[i]
-            current_b = box
+    #         prev_b = self.prev_boxes[i]
+    #         current_b = box
             
             
-            prev_b_axis_angles = np.array([0, 0, prev_b[6] + 1e-10])
-            prev_b_rot = o3d.geometry.get_rotation_matrix_from_axis_angle(prev_b_axis_angles)
-            yaw_1 = self.Rotmat2Euler(prev_b_rot)[2]
-            prev_b[6] = yaw_1
-            # prev_b_q8d = Quaternion(matrix=prev_b_rot)
+    #         prev_b_axis_angles = np.array([0, 0, prev_b[6] + 1e-10])
+    #         prev_b_rot = o3d.geometry.get_rotation_matrix_from_axis_angle(prev_b_axis_angles)
+    #         yaw_1 = self.Rotmat2Euler(prev_b_rot)[2]
+    #         prev_b[6] = yaw_1
+    #         # prev_b_q8d = Quaternion(matrix=prev_b_rot)
             
-            current_b_axis_angles = np.array([0, 0, current_b[6] + 1e-10])
-            current_b_rot = o3d.geometry.get_rotation_matrix_from_axis_angle(current_b_axis_angles)
-            yaw_2 = self.Rotmat2Euler(current_b_rot)[2]
-            current_b[6] = yaw_2
-            # current_b_q8d = Quaternion(matrix=current_b_rot)
+    #         current_b_axis_angles = np.array([0, 0, current_b[6] + 1e-10])
+    #         current_b_rot = o3d.geometry.get_rotation_matrix_from_axis_angle(current_b_axis_angles)
+    #         yaw_2 = self.Rotmat2Euler(current_b_rot)[2]
+    #         current_b[6] = yaw_2
+    #         # current_b_q8d = Quaternion(matrix=current_b_rot)
 
-            # box1 = BBox3D(*prev_b[:-1], prev_b_q8d)
-            # box2 = BBox3D(*current_b[:-1], current_b_q8d)
+    #         # box1 = BBox3D(*prev_b[:-1], prev_b_q8d)
+    #         # box2 = BBox3D(*current_b[:-1], current_b_q8d)
         
-            # if (iou_3d(box1, box2) > 0):
-            #     is_found = True
-            #     idx_prev_boxes = i
-            #     break
+    #         # if (iou_3d(box1, box2) > 0):
+    #         #     is_found = True
+    #         #     idx_prev_boxes = i
+    #         #     break
             
 
-            if (calculate_iou(prev_b, current_b) > 0):
-                is_found = True
-                idx_prev_boxes = i
-                break
+    #         if (calculate_iou(prev_b, current_b) > 0):
+    #             is_found = True
+    #             idx_prev_boxes = i
+    #             break
                 
-        return is_found, idx_prev_boxes
+    #     return is_found, idx_prev_boxes
+    
+
+

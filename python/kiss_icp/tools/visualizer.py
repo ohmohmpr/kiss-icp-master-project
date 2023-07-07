@@ -36,7 +36,7 @@ from bbox import  BBox3D
 from bbox.metrics import iou_3d
 from pyquaternion import Quaternion
 from .iou import calculate_iou
-from .bounding_box3D import BoundingBox3D, InstanceAssociation, Frame
+from .bounding_box3D import BoundingBox3D, InstanceAssociation, Frame, BoundingBoxes3D
 
 YELLOW = np.array([1, 0.706, 0])
 RED = np.array([128, 0, 0]) / 255.0
@@ -124,12 +124,10 @@ class RegistrationVisualizer(StubVisualizer):
         self.vis.add_geometry(self.keypoints)
         self.vis.add_geometry(self.target)
         
-        box_list = []
-        for i in range(self.first_frame_bboxes.shape[0]):
-            box = self.first_frame_bboxes[i]
-            box_list.append(BoundingBox3D(*box))
-        F = Frame(box_list)
-        self.I.add(F.frames, np.array([[1, 0, 0, 0], 
+        frame = Frame([BoundingBox3D(*bbox) for bbox in self.first_frame_bboxes])
+        # Frame([BoundingBox3D(*bbox) for bbox in bboxes])
+        # print("frame", frame)
+        self.I.add(frame, np.array([[1, 0, 0, 0], 
                                        [0, 1, 0, 0], 
                                        [0, 0, 1, 0], 
                                        [0, 0, 0, 1]]))
@@ -278,16 +276,22 @@ class RegistrationVisualizer(StubVisualizer):
         self.vis.update_geometry(self.source)
         self.vis.update_geometry(self.target)
 
-        box_list = []
-        for i in range(bboxes.shape[0]):
-            box = bboxes[i]
-            box_list.append(BoundingBox3D(*box))
-            
-        F = Frame(box_list)
-        self.I.add(F.frames, pose)
+        # box_list = []
+        # bboxes3D = BoundingBoxes3D(bboxes)
+        
+        # print("bboxes3D", bboxes3D)
+        
+        
+        # for i in range(bboxes.shape[0]):
+        #     box = bboxes[i]
+        #     box_list.append(BoundingBox3D(*box))
+
+        # frame = Frame(bboxes)
+        frame = Frame([BoundingBox3D(*bbox) for bbox in bboxes])
+        self.I.add(frame, pose)
         new_bboxes = self.I.return_current_obj()
-        
-        
+
+
         self.create_bboxes_test(new_bboxes)
         
         if self.reset_bounding_box:

@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import List
+from dataclasses import dataclass, astuple
+from typing import List, Tuple
 import pprint
 
 from bbox import  BBox3D
@@ -8,7 +8,7 @@ from pyquaternion import Quaternion
 
 import open3d as o3d
 import numpy as np
-import copy
+
 
 @dataclass
 class BoundingBox3D:
@@ -21,9 +21,19 @@ class BoundingBox3D:
     yaw: float
 
 @dataclass
-class Frame:
-    frames: List[BoundingBox3D]
+class BoundingBoxes3D():
+    bboxes3D: List[BoundingBox3D]
 
+@dataclass
+class Frame:
+    bboxes: List[BoundingBox3D]
+    
+    def __iter__(self):
+        return iter(astuple(self))
+    
+@dataclass
+class IA():
+    instance: Tuple
 
 class InstanceAssociation:
     def __init__(self):
@@ -83,12 +93,14 @@ class InstanceAssociation:
         
     def add(self, frame, pose):
         # print("POSE", pose)
+        num_bbox = len(frame.bboxes)
         if self.idx_frame != -1:
-            for i in range(len(frame)):
-                self.check_existance(frame[i], pose)
+            for i in range(num_bbox):
+                self.check_existance(frame.bboxes[i], pose)
         else:
-            for i in range(len(frame)):
-                instance = self.create_new_instance(frame[i], pose)
+            num_bbox = len(frame.bboxes)
+            for i in range(num_bbox):
+                instance = self.create_new_instance(frame.bboxes[i], pose)
                 self.add_new_instance(instance)
 
         self.idx_frame = self.idx_frame + 1

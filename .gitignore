@@ -10,7 +10,8 @@ _skbuild/
 ### C++ ###
 # data
 data/*
-
+delete
+test.py
 .DS_Store
 
 # Prerequisites
